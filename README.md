@@ -56,6 +56,8 @@ It follows `Capybara.save_path`.
 
 ### Save cookies
 
+Cookie files are stored in JSON format by default.
+
 ```
 session = Capybara::Session.new(:chrome)
 session.visit 'https://github.com/'
@@ -65,7 +67,7 @@ path = session.save_cookies
 Save cookie file with specified file name.
 
 ```
-session.save_cookies('user1.cookies.txt')
+session.save_cookies('user1.cookies.json')
 ```
 
 ### Restore cookies
@@ -82,7 +84,21 @@ cookies = session.restore_cookies
 Restore cookie file with specified file name.
 
 ```
-session.restore_cookies(File.join(Capybara.save_path, 'user1.cookies.txt'))
+session.restore_cookies(File.join(Capybara.save_path, 'user1.cookies.json'))
+```
+
+### Save and restore cookies from JSON
+
+Save cookies to json string (serialization to json).
+
+```
+json_str = session.cookies_to_json
+```
+
+Restore cookies from json string (deserialization from json).
+
+```
+session.restore_cookies_from_data(json_str, format: 'json')
 ```
 
 ### Save and restore cookies from YAML

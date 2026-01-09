@@ -9,11 +9,11 @@ RSpec.describe Capybara::Sessionkeeper do
     it "saves cookies into file" do
       session.visit 'https://github.com/'
       path = session.save_cookies
-      expect(path).to match(/capybara-\d+.cookies.txt/)
+      expect(path).to match(/capybara-\d+.cookies.json/)
     end
 
     it "saves cookies into specified file" do
-      cookie_path = 'my/cookie.txt'
+      cookie_path = 'my/cookie.json'
       session.visit 'https://github.com/'
       session.save_cookies(cookie_path)
       expect(File).to be_exist(File.join(Capybara.save_path, cookie_path))
@@ -21,7 +21,7 @@ RSpec.describe Capybara::Sessionkeeper do
 
     it "saves cookies without error when visit has never performed" do
       path = session.save_cookies
-      expect(path).to match(/capybara-\d+.cookies.txt/)
+      expect(path).to match(/capybara-\d+.cookies.json/)
     end
   end
 
@@ -45,7 +45,7 @@ RSpec.describe Capybara::Sessionkeeper do
     end
 
     context 'when cookie file exists' do
-      let(:cookie_path) { 'spec/fixtures/github.cookies.txt' }
+      let(:cookie_path) { 'spec/fixtures/github.cookies.json' }
 
       it "restores cookies from file" do
         expect(session.driver.browser.manage.all_cookies).to be_empty
@@ -81,14 +81,42 @@ RSpec.describe Capybara::Sessionkeeper do
       expect(cookies).to be_all{|c| c[:domain] =~ /github\.com/ }
       expect(session.driver.browser.manage.all_cookies).not_to be_empty
     end
+
+    it "supports loading from json data" do
+      session.visit 'https://github.com/'
+      json_str = session.cookies_to_json
+
+      cookies = session.restore_cookies_from_data(json_str, format: 'json')
+      expect(cookies).not_to be_empty
+      expect(cookies).to be_all{|c| c[:domain] =~ /github\.com/ }
+      expect(session.driver.browser.manage.all_cookies).not_to be_empty
+    end
   end
 
   describe '#cookies_to_yaml' do
     it "outputs string of yaml format" do
       session.visit 'https://github.com/'
       yaml_str = session.cookies_to_yaml
-      data = YAML.load(yaml_str)
+      data = if YAML.respond_to?(:safe_load)
+               YAML.safe_load(
+                 yaml_str,
+                 permitted_classes: [DateTime, Time, Symbol],
+                 permitted_symbols: [],
+                 aliases: true
+               )
+             else
+               YAML.load(yaml_str)
+             end
       expect(data.map{|d| d[:domain] }).to include('github.com')
+    end
+  end
+
+  describe '#cookies_to_json' do
+    it "outputs string of json format" do
+      session.visit 'https://github.com/'
+      json_str = session.cookies_to_json
+      data = JSON.parse(json_str)
+      expect(data.map{|d| d['domain'] }).to include('github.com')
     end
   end
 
@@ -109,6 +137,9 @@ RSpec.describe Capybara::Sessionkeeper do
     it "sees the value in session after restoring cookies" do
       skip("Skipping on CI") if ENV['CI']
       session.visit "#{app_host}?test=abc"
+      unless session.has_content?('Session: abc')
+        skip("Test app unavailable")
+      end
       expect(session).to have_content('Session: abc')
       session.save_cookies
 

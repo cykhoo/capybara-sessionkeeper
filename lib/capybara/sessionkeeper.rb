@@ -1,5 +1,8 @@
 require 'capybara'
 require "capybara/sessionkeeper/version"
+require 'date'
+require 'json'
+require 'time'
 require 'yaml'
 
 module Capybara
@@ -8,8 +11,8 @@ module Capybara
 
     def save_cookies(path = nil)
       path = prepare_path(path, cookie_file_extension)
-      data = Marshal.dump driver.browser.manage.all_cookies
-      File.open(path, 'wb') {|f| f.puts(data) }
+      data = cookies_to_json
+      File.open(path, 'w') {|f| f.puts(data) }
       path
     end
 
@@ -22,7 +25,12 @@ module Capybara
 
     def restore_cookies_from_data(data, options = {})
       raise CookieError, "visit must be performed to restore cookies" if ['data:,', 'about:blank'].include?(current_url)
-      cookies = %w[yml yaml].include?(options[:format]) ? YAML.load(data) : Marshal.load(data)
+      cookies = if %w[yml yaml].include?(options[:format])
+                  load_yaml_cookies(data)
+                else
+                  JSON.parse(data)
+                end
+      cookies = normalize_cookie_keys(cookies)
       cookies.each do |d|
         begin
           driver.browser.manage.delete_cookie d[:name]
@@ -38,8 +46,13 @@ module Capybara
       YAML.dump driver.browser.manage.all_cookies
     end
 
+    def cookies_to_json
+      cookies = driver.browser.manage.all_cookies
+      JSON.generate(cookies.map {|cookie| normalize_cookie_for_json(cookie) })
+    end
+
     def cookie_file_extension
-      'cookies.txt'
+      'cookies.json'
     end
 
     def find_latest_cookie_file
@@ -54,6 +67,51 @@ module Capybara
         # puts "Skipped invalid cookie domain: #{d[:domain]} - #{d.inspect}"
       else
         raise(error)
+      end
+    end
+
+    def normalize_cookie_keys(cookies)
+      Array(cookies).map do |cookie|
+        cookie.each_with_object({}) do |(key, value), result|
+          key = key.to_sym
+          if %i[expires expiry].include?(key)
+            value = normalize_cookie_expiration(value)
+          end
+          result[key] = value
+        end
+      end
+    end
+
+    def normalize_cookie_for_json(cookie)
+      cookie.each_with_object({}) do |(key, value), result|
+        key = key.to_s
+        if %w[expires expiry].include?(key)
+          result[key] = normalize_cookie_expiration(value)
+        else
+          result[key] = value
+        end
+      end
+    end
+
+    def normalize_cookie_expiration(value)
+      return nil if value.nil?
+      return value.to_time.to_i if value.is_a?(Time) || value.is_a?(DateTime)
+      return value.to_i if value.is_a?(Integer)
+      return Time.parse(value).to_i if value.is_a?(String)
+      return value.to_i if value.respond_to?(:to_i)
+      value
+    end
+
+    def load_yaml_cookies(data)
+      if YAML.respond_to?(:safe_load)
+        YAML.safe_load(
+          data,
+          permitted_classes: [DateTime, Time, Symbol],
+          permitted_symbols: [],
+          aliases: true
+        )
+      else
+        YAML.load(data)
       end
     end
   end

@@ -1,0 +1,10 @@
+[
+  {
+    "name": "logged_in",
+    "value": "no",
+    "path": "/",
+    "domain": ".github.com",
+    "secure": true,
+    "expires": null
+  }
+]
